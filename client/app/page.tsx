@@ -5,7 +5,7 @@ import { authClient } from "@/lib/auth-client"
 import { useRouter } from "next/navigation"
 
 export default function Home() {
-  const { data, isPending } = authClient.useSession()
+  const { data, isPending } = authClient.useSession();
   const router = useRouter()
 
   if (isPending) {

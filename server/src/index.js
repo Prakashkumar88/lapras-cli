@@ -31,6 +31,11 @@ app.get('/api/me', async(req, res) => {
   return res.json(session);
 });
 
+app.get("/device", async (req, res) => {
+  const { user_code } = req.query; // Fixed: should be req.query, not req.params
+  res.redirect(`http://localhost:3000/device?user_code=${user_code}`);
+});
+
 app.listen(process.env.PORT || 3005, () => {
   console.log(`Server is running on port https://localhost:${process.env.PORT || 3005}`);
 });
