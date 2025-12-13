@@ -1,7 +1,7 @@
 -- CreateTable
-CREATE TABLE "test" (
+CREATE TABLE "Test" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
 
-    CONSTRAINT "test_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Test_pkey" PRIMARY KEY ("id")
 );
