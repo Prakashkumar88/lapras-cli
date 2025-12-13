@@ -1,11 +1,34 @@
-import express from 'express';
-import dotenv from 'dotenv';
+import "./env.js"; 
 
-dotenv.config();
+import express from "express";
+import cors from "cors";
+import { auth } from "./lib/auth.js";
+import { fromNodeHeaders, toNodeHandler } from "better-auth/node";
+
+
 const app = express();
 
-app.get('/', (req, res) => {
-  res.send('Hello World!');
+app.use(
+  cors({
+    origin: "http://localhost:3000", 
+    methods: ["GET", "POST", "PUT", "DELETE"], 
+    credentials: true, 
+  })
+);
+
+app.all("/api/auth/*splat", toNodeHandler(auth));
+
+app.use(express.json());
+
+app.get('/health', (req, res) => {
+  res.send('OK');
+});
+
+app.get('/api/me', async(req, res) => {
+  const session = await auth.getSession({
+    headers: fromNodeHeaders(req.headers),
+  });
+  return res.json(session);
 });
 
 app.listen(process.env.PORT || 3005, () => {
