@@ -343,7 +343,7 @@ async function chatLoop(conversation) {
 export async function startToolChat(conversationId = null) {
   try {
     intro(
-      boxen(chalk.bold.cyan("🛠️  Orbit AI - Tool Calling Mode"), {
+      boxen(chalk.bold.cyan("🛠️  Lapras AI - Tool Calling Mode"), {
         padding: 1,
         borderStyle: "double",
         borderColor: "cyan",
