@@ -8,7 +8,7 @@ import figlet from "figlet";
 import { Command } from "commander";
 
 import { login, logout, whoami } from "./commands/auth/login.js";
-// import { wakeUp } from "./commands/ai/wakeUp.js";
+import { wakeUp } from "./commands/ai/wakeUp.js";
 
 dotenv.config();
 
@@ -31,7 +31,7 @@ async function main() {
     .description("Lapras CLI - Device Flow Authentication");
 
   // Add commands
-  // program.addCommand(wakeUp);
+  program.addCommand(wakeUp);
   program.addCommand(login);
   program.addCommand(logout);
   program.addCommand(whoami);
