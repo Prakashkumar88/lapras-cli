@@ -5,6 +5,7 @@ import { getStoredToken } from "../auth/login.js";
 import prisma from "../../../lib/db.js";
 import { select } from "@clack/prompts";
 import { startChat } from "../../chat/chat-with-ai.js";
+import { startToolChat } from "../../chat/chat-with-ai-tools.js";
 
 const wakeUpAction = async () => {
   const token = await getStoredToken();
@@ -47,6 +48,11 @@ const wakeUpAction = async () => {
         value: "chat",
         label: "Chat",
         hint: "Simple chat with AI",
+      },
+      {
+        value: "tool",
+        label: "Tool Calling",
+        hint: "Chat with tools (Google Search, Code Execution)",
       }
     ],
   });
@@ -54,6 +60,9 @@ const wakeUpAction = async () => {
   switch (choice) {
     case "chat":
       await startChat("chat");
+      break;
+    case "tool":
+      await startToolChat();
       break;
   }
 };
