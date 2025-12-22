@@ -30,13 +30,15 @@ export const LoginForm = () => {
                 variant={"outline"}
                 className="w-full h-full"
                 type="button"
-                onClick={() =>
-                  authClient.signIn.social({
-                    provider: "github",
-                    // callbackURL: "http://localhost:3000",
-                    // callbackURL: process.env.NEXT_PUBLIC_APP_URL!,
-                  })
-                }
+                // onClick={() =>
+                //   authClient.signIn.social({
+                //     provider: "github",
+                //     // callbackURL: "http://localhost:3000",
+                //     // callbackURL: process.env.NEXT_PUBLIC_APP_URL!,
+                //   })
+                onClick={() => {
+                  window.location.href = `${process.env.NEXT_PUBLIC_SERVER_URL}/api/auth/sign-in/social?provider=github`;
+                }}
               >
                 <Image
                   src={"/github.svg"}
