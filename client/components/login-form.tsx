@@ -33,7 +33,8 @@ export const LoginForm = () => {
                 onClick={() =>
                   authClient.signIn.social({
                     provider: "github",
-                    callbackURL: "http://localhost:3000",
+                    // callbackURL: "http://localhost:3000",
+                    callbackURL: process.env.NEXT_PUBLIC_APP_URL!,
                   })
                 }
               >
