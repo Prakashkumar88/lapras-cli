@@ -1,7 +1,7 @@
 ---
-# 🧠 Lapras CLI — AI-Powered Command Line Assistant
+# 🦖 Lapras CLI — AI-Powered Command Line Assistant
 
-🦖 Lapras CLI is a **developer-focused AI assistant for the terminal**.
+Lapras CLI is a **developer-focused AI assistant for the terminal**.
 It combines conversational AI, tool calling, code execution, and secure authentication into a single CLI workflow.
 
 Built to explore how modern AI agents can **reason, use tools, and interact securely from the command line**.
