@@ -8,9 +8,7 @@ Built to explore how modern AI agents can **reason, use tools, and interact secu
 
 ---
 
-```md
 ![Device Login Flow](./screenshots/lapras.png)
-```
 
 ## ✨ Features
 
@@ -53,14 +51,14 @@ Built to explore how modern AI agents can **reason, use tools, and interact secu
 
 > Screenshots below show real terminal sessions using Lapras CLI.
 
-```md
+
 ![Device Login Flow](./screenshots/login.png)
 ![Device Logout Flow](./screenshots/logout.png)
 ![Device wake up](./screenshots/wakeup.png)
 ![Weather Query via Tools](./screenshots/chat02.png)
 ![Weather Query via Tools](./screenshots/chat01.png)
 ![AI assistant](./screenshots/chat03.png)
-```
+
 
 ---
 
