@@ -1,6 +1,6 @@
 {
   "name": "lapras-cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A CLI based AI Assistant",
   "main": "src/index.js",
   "bin": {
@@ -10,6 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "nodemon src/index.js",
     "build": "npx prisma generate",
+    "postinstall": "npx prisma generate",
     "start": "node src/index.js"
   },
   "keywords": [],
