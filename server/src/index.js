@@ -93,7 +93,15 @@ app.post('/api/conversations/:id/chat', requireSession, async (req, res) => {
     const { messages } = req.body; // [{role, content}]
 
     const model = google(process.env.LAPRAS_MODEL || "gemini-2.5-flash");
-    const result = streamText({ model, messages });
+    
+    // Inject the current date and time into the system prompt
+    const systemPrompt = `You are Lapras, a helpful CLI AI assistant. The current date and time is ${new Date().toLocaleString()}. Please use this current time for any relative time queries.`;
+    
+    const result = streamText({ 
+      model, 
+      messages,
+      system: systemPrompt
+    });
 
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Transfer-Encoding", "chunked");
