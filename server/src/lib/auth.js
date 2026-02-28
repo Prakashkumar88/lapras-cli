@@ -11,12 +11,6 @@ export const auth = betterAuth({
   baseURL: process.env.BETTER_AUTH_URL,
   basePath: "/api/auth",
   trustedOrigins: [process.env.CLIENT_URL || "http://localhost:3000"],
-  advanced: {
-    defaultCookieAttributes: {
-      sameSite: "none",
-      secure: true,
-    },
-  },
   plugins: [
     deviceAuthorization({ 
       verificationUri: "/device", 
