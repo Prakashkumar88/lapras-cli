@@ -9,7 +9,7 @@ export const auth = betterAuth({
     provider: "postgresql",
   }),
   basePath: "/api/auth",
-  trustedOrigins: ["http://localhost:3000"],
+  trustedOrigins: [process.env.CLIENT_URL || "http://localhost:3000"],
   plugins: [
     deviceAuthorization({ 
       verificationUri: "/device", 
