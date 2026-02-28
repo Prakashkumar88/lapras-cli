@@ -1,7 +1,7 @@
 {
-  "name": "server",
+  "name": "lapras-cli",
   "version": "1.0.0",
-  "description": "",
+  "description": "A CLI based AI Assistant",
   "main": "src/index.js",
   "bin": {
     "lapras": "src/cli/main.js"
