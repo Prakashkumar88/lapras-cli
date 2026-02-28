@@ -12,7 +12,6 @@ export const auth = betterAuth({
   basePath: "/api/auth",
   trustedOrigins: [process.env.CLIENT_URL || "http://localhost:3000"],
   advanced: {
-    useCrossSubdomainCookies: true,
     defaultCookieAttributes: {
       sameSite: "none",
       secure: true,
