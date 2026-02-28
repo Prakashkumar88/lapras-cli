@@ -11,11 +11,11 @@ import path from "path";
 import yoctoSpinner from "yocto-spinner";
 import * as z from "zod/v4";
 import dotenv from "dotenv";
-import prisma from "../../../lib/db.js";
+import { apiGet, LAPRAS_SERVER_URL } from "../../api-client.js";
 
 dotenv.config();
 
-const DEMO_URL = "http://localhost:3005";
+const DEMO_URL = LAPRAS_SERVER_URL;
 const CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const CONFIG_DIR = path.join(os.homedir(), ".better-auth");
 const TOKEN_FILE = path.join(CONFIG_DIR, "token.json");
@@ -385,28 +385,15 @@ export async function whoamiAction(opts) {
     process.exit(1);
   }
 
-  const user = await prisma.user.findFirst({
-    where: {
-      sessions: {
-        some: {
-          token: token.access_token,
-        },
-      },
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      image: true,
-    },
-  });
-
-  // Output user session info
-  console.log(
-    chalk.bold.greenBright(`\n👤 User: ${user.name}
-📧 Email: ${user.email}
-👤 ID: ${user.id}`)
-  );
+  try {
+    const user = await apiGet("/api/me", token.access_token);
+    console.log(
+      chalk.bold.greenBright(`\n👤 User: ${user.name}\n📧 Email: ${user.email}\n👤 ID: ${user.id}`)
+    );
+  } catch (err) {
+    console.log(chalk.red("Failed to fetch user info:"), err.message);
+    process.exit(1);
+  }
 }
 
 // ============================================

@@ -4,15 +4,12 @@ import { text, isCancel, cancel, intro, outro } from "@clack/prompts";
 import yoctoSpinner from "yocto-spinner";
 import { marked } from "marked";
 import { markedTerminal } from "marked-terminal";
-import { AIService } from "../ai/google-service.js";
-import { ChatService } from "../../services/chat.services.js";
 import { getStoredToken } from "../commands/auth/login.js";
-import prisma from "../../lib/db.js";
+import { LAPRAS_SERVER_URL, apiGet, apiPost, apiRequest } from "../api-client.js";
 
 // Configure marked to use terminal renderer
 marked.use(
   markedTerminal({
-    // Styling options for terminal output
     code: chalk.cyan,
     blockquote: chalk.gray.italic,
     heading: chalk.green.bold,
@@ -30,48 +27,43 @@ marked.use(
   })
 );
 
-// Initialize services
-const aiService = new AIService();
-const chatService = new ChatService();
-
 async function getUserFromToken() {
   const token = await getStoredToken();
-  
+
   if (!token?.access_token) {
     throw new Error("Not authenticated. Please run 'lapras login' first.");
   }
 
-  const spinner = yoctoSpinner({ text: "Authenticating..." }).start();
+  const spinner = yoctoSpinner({ text: "Fetching User Information..." }).start();
 
-  const user = await prisma.user.findFirst({
-    where: {
-      sessions: {
-        some: { token: token.access_token },
-      },
-    },
-  });
-
-  if (!user) {
-    spinner.error("User not found");
+  try {
+    const user = await apiGet("/api/me", token.access_token);
+    spinner.success(`Welcome back, ${user.name}!`);
+    return { user, token: token.access_token };
+  } catch (err) {
+    spinner.error("Authentication failed");
     throw new Error("User not found. Please login again.");
   }
-
-  spinner.success(`Welcome back, ${user.name}!`);
-  return user;
 }
 
-async function initConversation(userId, conversationId = null, mode = "chat") {
+async function initConversation(token, userId, conversationId = null, mode = "chat") {
   const spinner = yoctoSpinner({ text: "Loading conversation..." }).start();
-  
-  const conversation = await chatService.getOrCreateConversation(
-    userId,
-    conversationId,
-    mode
-  );
-  
+
+  let conversation;
+  if (conversationId) {
+    try {
+      conversation = await apiGet(`/api/conversations/${conversationId}`, token);
+    } catch {
+      // fall through to create
+    }
+  }
+
+  if (!conversation) {
+    conversation = await apiPost("/api/conversations", token, { mode });
+  }
+
   spinner.success("Conversation loaded");
-  
-  // Display conversation info in a box
+
   const conversationInfo = boxen(
     `${chalk.bold("Conversation")}: ${conversation.title}\n${chalk.gray("ID: " + conversation.id)}\n${chalk.gray("Mode: " + conversation.mode)}`,
     {
@@ -83,15 +75,13 @@ async function initConversation(userId, conversationId = null, mode = "chat") {
       titleAlignment: "center",
     }
   );
-  
   console.log(conversationInfo);
-  
-  // Display existing messages if any
+
   if (conversation.messages?.length > 0) {
     console.log(chalk.yellow("📜 Previous messages:\n"));
     displayMessages(conversation.messages);
   }
-  
+
   return conversation;
 }
 
@@ -108,7 +98,6 @@ function displayMessages(messages) {
       });
       console.log(userBox);
     } else {
-      // Render markdown for assistant messages
       const renderedContent = marked.parse(msg.content);
       const assistantBox = boxen(renderedContent.trim(), {
         padding: 1,
@@ -123,58 +112,50 @@ function displayMessages(messages) {
   });
 }
 
-async function saveMessage(conversationId, role, content) {
-  return await chatService.addMessage(conversationId, role, content);
+async function saveUserMessage(token, conversationId, content) {
+  return await apiPost(`/api/conversations/${conversationId}/messages`, token, {
+    role: "user",
+    content,
+  });
 }
 
-async function getAIResponse(conversationId) {
-  const spinner = yoctoSpinner({ 
-    text: "AI is thinking...", 
-    color: "cyan" 
+async function getAIResponse(token, conversationId, messages) {
+  const spinner = yoctoSpinner({
+    text: "AI is thinking...",
+    color: "cyan",
   }).start();
 
-  const dbMessages = await chatService.getMessages(conversationId);
-  const aiMessages = chatService.formatMessagesForAI(dbMessages);
-  
+  const res = await apiRequest(`/api/conversations/${conversationId}/chat`, token, {
+    method: "POST",
+    body: JSON.stringify({ messages }),
+  });
+
+  // Stream the text response
   let fullResponse = "";
   let isFirstChunk = true;
-  
-  try {
-    const result = await aiService.sendMessage(aiMessages, (chunk) => {
-      // Stop spinner on first chunk and show header
-      if (isFirstChunk) {
-        spinner.stop();
-        console.log("\n");
-        const header = chalk.green.bold("🤖 Assistant:");
-        console.log(header);
-        console.log(chalk.gray("─".repeat(60)));
-        isFirstChunk = false;
-      }
-      fullResponse += chunk;
-    });
-    
-    // Now render the complete markdown response
-    console.log("\n");
-    const renderedMarkdown = marked.parse(fullResponse);
-    console.log(renderedMarkdown);
-    console.log(chalk.gray("─".repeat(60)));
-    console.log("\n");
-    
-    return result.content;
-  } catch (error) {
-    spinner.error("Failed to get AI response");
-    throw error;
+  const decoder = new TextDecoder();
+
+  for await (const chunk of res.body) {
+    const text = decoder.decode(chunk, { stream: true });
+    if (isFirstChunk) {
+      spinner.stop();
+      console.log("\n");
+      console.log(chalk.green.bold("🤖 Assistant:"));
+      console.log(chalk.gray("─".repeat(60)));
+      isFirstChunk = false;
+    }
+    fullResponse += text;
+    process.stdout.write(text);
   }
+
+  console.log("\n\n");
+  console.log(chalk.gray("─".repeat(60)));
+  console.log("\n");
+
+  return fullResponse;
 }
 
-async function updateConversationTitle(conversationId, userInput, messageCount) {
-  if (messageCount === 1) {
-    const title = userInput.slice(0, 50) + (userInput.length > 50 ? "..." : "");
-    await chatService.updateTitle(conversationId, title);
-  }
-}
-
-async function chatLoop(conversation) {
+async function chatLoop(token, conversation) {
   const helpBox = boxen(
     `${chalk.gray('• Type your message and press Enter')}\n${chalk.gray('• Markdown formatting is supported in responses')}\n${chalk.gray('• Type "exit" to end conversation')}\n${chalk.gray('• Press Ctrl+C to quit anytime')}`,
     {
@@ -185,8 +166,13 @@ async function chatLoop(conversation) {
       dimBorder: true,
     }
   );
-  
   console.log(helpBox);
+
+  // Build message history from existing messages
+  const messageHistory = (conversation.messages || []).map((m) => ({
+    role: m.role,
+    content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+  }));
 
   while (true) {
     const userInput = await text({
@@ -199,7 +185,6 @@ async function chatLoop(conversation) {
       },
     });
 
-    // Handle cancellation (Ctrl+C)
     if (isCancel(userInput)) {
       const exitBox = boxen(chalk.yellow("Chat session ended. Goodbye! 👋"), {
         padding: 1,
@@ -211,7 +196,6 @@ async function chatLoop(conversation) {
       process.exit(0);
     }
 
-    // Handle exit command
     if (userInput.toLowerCase() === "exit") {
       const exitBox = boxen(chalk.yellow("Chat session ended. Goodbye! 👋"), {
         padding: 1,
@@ -223,31 +207,25 @@ async function chatLoop(conversation) {
       break;
     }
 
-  
-  
+    // Add to local history and persist
+    messageHistory.push({ role: "user", content: userInput });
+    await saveUserMessage(token, conversation.id, userInput);
 
-    // Save user message
-    await saveMessage(conversation.id, "user", userInput);
+    // Update title after first message
+    if (messageHistory.filter(m => m.role === "user").length === 1) {
+      const title = userInput.slice(0, 50) + (userInput.length > 50 ? "..." : "");
+      apiPost(`/api/conversations/${conversation.id}/title`, token, { title }).catch(() => {});
+    }
 
-    // Get messages count before AI response
-    const messages = await chatService.getMessages(conversation.id);
-    
-    // Get AI response with streaming and markdown rendering
-    const aiResponse = await getAIResponse(conversation.id);
-
-    // Save AI response
-    await saveMessage(conversation.id, "assistant", aiResponse);
-
-    // Update title if first exchange
-    await updateConversationTitle(conversation.id, userInput, messages.length);
+    // Get AI response (server handles streaming + persistence)
+    const aiResponse = await getAIResponse(token, conversation.id, messageHistory);
+    messageHistory.push({ role: "assistant", content: aiResponse });
   }
 }
 
 // Main entry point
 export async function startChat(mode = "chat", conversationId = null) {
   try {
-    // Display intro banner
-    
     intro(
       boxen(chalk.bold.cyan("🦖 Lapras AI Chat"), {
         padding: 1,
@@ -256,11 +234,10 @@ export async function startChat(mode = "chat", conversationId = null) {
       })
     );
 
-    const user = await getUserFromToken();
-    const conversation = await initConversation(user.id, conversationId, mode);
-    await chatLoop(conversation);
-    
-    // Display outro
+    const { user, token } = await getUserFromToken();
+    const conversation = await initConversation(token, user.id, conversationId, mode);
+    await chatLoop(token, conversation);
+
     outro(chalk.green("✨ Thanks for chatting!"));
   } catch (error) {
     const errorBox = boxen(chalk.red(`❌ Error: ${error.message}`), {
