@@ -4,10 +4,8 @@ import { text, isCancel, cancel, intro, outro, multiselect } from "@clack/prompt
 import yoctoSpinner from "yocto-spinner";
 import { marked } from "marked";
 import { markedTerminal } from "marked-terminal";
-import { AIService } from "../ai/google-service.js";
-import { ChatService } from "../../services/chat.services.js";
 import { getStoredToken } from "../commands/auth/login.js";
-import prisma from "../../lib/db.js";
+import { apiGet, apiPost, apiRequest } from "../api-client.js";
 import { 
   availableTools, 
   getEnabledTools, 
@@ -36,33 +34,24 @@ marked.use(
   })
 );
 
-const aiService = new AIService();
-const chatService = new ChatService();
 
 async function getUserFromToken() {
   const token = await getStoredToken();
   
   if (!token?.access_token) {
-    throw new Error("Not authenticated. Please run 'orbit login' first.");
+    throw new Error("Not authenticated. Please run 'lapras login' first.");
   }
 
   const spinner = yoctoSpinner({ text: "Authenticating..." }).start();
 
-  const user = await prisma.user.findFirst({
-    where: {
-      sessions: {
-        some: { token: token.access_token },
-      },
-    },
-  });
-
-  if (!user) {
+  try {
+    const user = await apiGet("/api/me", token.access_token);
+    spinner.success(`Welcome back, ${user.name}!`);
+    return { user, token: token.access_token };
+  } catch {
     spinner.error("User not found");
     throw new Error("User not found. Please login again.");
   }
-
-  spinner.success(`Welcome back, ${user.name}!`);
-  return user;
 }
 
 async function selectTools() {
@@ -109,14 +98,16 @@ async function selectTools() {
   return selectedTools.length > 0;
 }
 
-async function initConversation(userId, conversationId = null, mode = "tool") {
+async function initConversation(token, userId, conversationId = null, mode = "tool") {
   const spinner = yoctoSpinner({ text: "Loading conversation..." }).start();
-  
-  const conversation = await chatService.getOrCreateConversation(
-    userId,
-    conversationId,
-    mode
-  );
+
+  let conversation;
+  if (conversationId) {
+    try { conversation = await apiGet(`/api/conversations/${conversationId}`, token); } catch {}
+  }
+  if (!conversation) {
+    conversation = await apiPost("/api/conversations", token, { mode });
+  }
   
   spinner.success("Conversation loaded");
   
@@ -177,104 +168,54 @@ function displayMessages(messages) {
   });
 }
 
-async function saveMessage(conversationId, role, content) {
-  return await chatService.addMessage(conversationId, role, content);
+async function saveMessage(token, conversationId, role, content) {
+  return await apiPost(`/api/conversations/${conversationId}/messages`, token, { role, content });
 }
 
-async function getAIResponse(conversationId) {
+async function getAIResponse(token, conversationId, messageHistory) {
   const spinner = yoctoSpinner({ 
     text: "AI is thinking...", 
     color: "cyan" 
   }).start();
 
-  const dbMessages = await chatService.getMessages(conversationId);
-  const aiMessages = chatService.formatMessagesForAI(dbMessages);
+  const res = await apiRequest(`/api/conversations/${conversationId}/chat`, token, {
+    method: "POST",
+    body: JSON.stringify({ messages: messageHistory }),
+  });
 
-  const tools = getEnabledTools();
-  
   let fullResponse = "";
   let isFirstChunk = true;
-  const toolCallsDetected = [];
-  
-  try {
-    // IMPORTANT: Pass tools in the streamText config
-    const result = await aiService.sendMessage(
-      aiMessages, 
-      (chunk) => {
-        if (isFirstChunk) {
-          spinner.stop();
-          console.log("\n");
-          const header = chalk.green.bold("🤖 Assistant:");
-          console.log(header);
-          console.log(chalk.gray("─".repeat(60)));
-          isFirstChunk = false;
-        }
-        fullResponse += chunk;
-      },
-      tools,
-      (toolCall) => {
-        toolCallsDetected.push(toolCall);
-      }
-    );
-    
-    // Display tool calls if any
-    if (toolCallsDetected.length > 0) {
-      console.log("\n");
-      const toolCallBox = boxen(
-        toolCallsDetected.map(tc => 
-          `${chalk.cyan("🔧 Tool:")} ${tc.toolName}\n${chalk.gray("Args:")} ${JSON.stringify(tc.args, null, 2)}`
-        ).join("\n\n"),
-        {
-          padding: 1,
-          margin: 1,
-          borderStyle: "round",
-          borderColor: "cyan",
-          title: "🛠️  Tool Calls",
-        }
-      );
-      console.log(toolCallBox);
-    }
+  const decoder = new TextDecoder();
 
-    // Display tool results if any
-    if (result.toolResults && result.toolResults.length > 0) {
-      const toolResultBox = boxen(
-        result.toolResults.map(tr => 
-          `${chalk.green("✅ Tool:")} ${tr.toolName}\n${chalk.gray("Result:")} ${JSON.stringify(tr.result, null, 2).slice(0, 200)}...`
-        ).join("\n\n"),
-        {
-          padding: 1,
-          margin: 1,
-          borderStyle: "round",
-          borderColor: "green",
-          title: "📊 Tool Results",
-        }
-      );
-      console.log(toolResultBox);
+  for await (const chunk of res.body) {
+    const text = decoder.decode(chunk, { stream: true });
+    if (isFirstChunk) {
+      spinner.stop();
+      console.log("\n");
+      console.log(chalk.green.bold("🤖 Assistant:"));
+      console.log(chalk.gray("─".repeat(60)));
+      isFirstChunk = false;
     }
-    
-    // Render markdown response
-    console.log("\n");
-    const renderedMarkdown = marked.parse(fullResponse);
-    console.log(renderedMarkdown);
-    console.log(chalk.gray("─".repeat(60)));
-    console.log("\n");
-    
-    return result.content;
-  } catch (error) {
-    spinner.error("Failed to get AI response");
-    throw error;
+    fullResponse += text;
+    process.stdout.write(text);
   }
+
+  console.log("\n\n");
+  console.log(chalk.gray("─".repeat(60)));
+  console.log("\n");
+
+  return fullResponse;
 }
 
 
-async function updateConversationTitle(conversationId, userInput, messageCount) {
+async function updateConversationTitle(token, conversationId, userInput, messageCount) {
   if (messageCount === 1) {
     const title = userInput.slice(0, 50) + (userInput.length > 50 ? "..." : "");
-    await chatService.updateTitle(conversationId, title);
+    apiPost(`/api/conversations/${conversationId}/title`, token, { title }).catch(() => {});
   }
 }
 
-async function chatLoop(conversation) {
+async function chatLoop(token, conversation) {
   const enabledToolNames = getEnabledToolNames();
   const helpBox = boxen(
     `${chalk.gray('• Type your message and press Enter')}\n${chalk.gray('• AI has access to:')} ${enabledToolNames.length > 0 ? enabledToolNames.join(", ") : "No tools"}\n${chalk.gray('• Type "exit" to end conversation')}\n${chalk.gray('• Press Ctrl+C to quit anytime')}`,
@@ -288,6 +229,11 @@ async function chatLoop(conversation) {
   );
   
   console.log(helpBox);
+
+  const messageHistory = (conversation.messages || []).map((m) => ({
+    role: m.role,
+    content: typeof m.content === "string" ? m.content : JSON.stringify(m.content),
+  }));
 
   while (true) {
     const userInput = await text({
@@ -332,11 +278,11 @@ async function chatLoop(conversation) {
     });
     console.log(userBox);
 
-    await saveMessage(conversation.id, "user", userInput);
-    const messages = await chatService.getMessages(conversation.id);
-    const aiResponse = await getAIResponse(conversation.id);
-    await saveMessage(conversation.id, "assistant", aiResponse);
-    await updateConversationTitle(conversation.id, userInput, messages.length);
+    messageHistory.push({ role: "user", content: userInput });
+    await saveMessage(token, conversation.id, "user", userInput);
+    const aiResponse = await getAIResponse(token, conversation.id, messageHistory);
+    messageHistory.push({ role: "assistant", content: aiResponse });
+    await updateConversationTitle(token, conversation.id, userInput, messageHistory.filter(m => m.role === "user").length);
   }
 }
 
@@ -350,13 +296,13 @@ export async function startToolChat(conversationId = null) {
       })
     );
 
-    const user = await getUserFromToken();
+    const { user, token } = await getUserFromToken();
     
     // Select tools
     await selectTools();
     
-    const conversation = await initConversation(user.id, conversationId, "tool");
-    await chatLoop(conversation);
+    const conversation = await initConversation(token, user.id, conversationId, "tool");
+    await chatLoop(token, conversation);
     
     // Reset tools on exit
     resetTools();

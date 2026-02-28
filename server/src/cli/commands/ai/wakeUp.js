@@ -2,7 +2,7 @@ import chalk from "chalk";
 import { Command } from "commander";
 import yoctoSpinner from "yocto-spinner";
 import { getStoredToken } from "../auth/login.js";
-import prisma from "../../../lib/db.js";
+import { apiGet } from "../../api-client.js";
 import { select } from "@clack/prompts";
 import { startChat } from "../../chat/chat-with-ai.js";
 import { startToolChat } from "../../chat/chat-with-ai-tools.js";
@@ -19,19 +19,13 @@ const wakeUpAction = async () => {
   const spinner = yoctoSpinner({ text: "Fetching User Information..." });
   spinner.start();
 
-  const user = await prisma.user.findFirst({
-    where: {
-      sessions: {
-        some: { token: token.access_token },
-      },
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      image: true,
-    },
-  });
+  let user;
+  try {
+    user = await apiGet("/api/me", token.access_token);
+  } catch {
+    spinner.error("Failed to fetch user info.");
+    return;
+  }
 
   spinner.stop();
 
